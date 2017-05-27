@@ -1,1 +1,3 @@
-c('source.c', 'program').
+% -*- mode: prolog -*-
+all :-
+    c(["source.c"], "program").
