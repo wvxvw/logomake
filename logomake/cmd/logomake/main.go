@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/mndrix/golog"
@@ -17,11 +18,12 @@ import (
 type LogomakeOpions struct {
 	Makefile string `default:"Makefile.logomake"`
 	Goal     string `default:"all."`
+	Home     string `default:"~/.logomake"`
 }
 
 func main() {
 	opts := parseFlags()
-	m := initMachine()
+	m := initMachine(opts.Home)
 
 	f, err := os.OpenFile(opts.Makefile, os.O_RDONLY, os.ModePerm)
 	if err != nil {
@@ -34,7 +36,7 @@ func main() {
 		panic(fmt.Sprintf("Cannot parse %s: %s", opts.Goal, err))
 	}
 	if !m.CanProve(goal) {
-		panic(fmt.Sprintf("Cannot prove %s: %s", opts.Goal, err))
+		panic(fmt.Sprintf("Cannot prove %s", opts.Goal))
 	}
 	variables := term.Variables(goal)
 	answers := m.ProveAll(goal)
@@ -71,6 +73,7 @@ func parseFlags() *LogomakeOpions {
 		"Read recipes from this file",
 	)
 	goalPtr := fs.String("goal", "all.", "Goal to build")
+	homePtr := fs.String("home", "~/.logomake", "Logomake Prolog sources")
 	logging.Dbug.Printf("Args: %s", os.Args)
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		panic(err)
@@ -82,13 +85,32 @@ func parseFlags() *LogomakeOpions {
 	return &LogomakeOpions{
 		Makefile: *makefilePtr,
 		Goal:     *goalPtr,
+		Home:     *homePtr,
 	}
 }
 
-func initMachine() golog.Machine {
-	return golog.NewMachine().RegisterForeign(
+func initMachine(home string) golog.Machine {
+	builtins := golog.NewMachine().RegisterForeign(
 		map[string]golog.ForeignPredicate{
-			"c/2": native.C2,
+			"c/2":    native.C2,
+			"glob/2": native.Glob2,
 		},
 	)
+	prolog, err := filepath.Glob(home + "/*.pl")
+	if err == nil {
+		for _, f := range prolog {
+			file, err := os.OpenFile(f, os.O_RDONLY, os.ModePerm)
+			if err == nil {
+				builtins = builtins.Consult(file)
+			} else {
+				logging.Warn.Printf("Couldn't read file: %s: %s", f, err)
+			}
+		}
+	} else {
+		logging.Warn.Printf(
+			"Couldn't access Logomake home in: %s: %s",
+			home, err,
+		)
+	}
+	return builtins
 }
